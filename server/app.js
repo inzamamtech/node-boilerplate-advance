@@ -1,20 +1,26 @@
 const express = require("express");
+const helmet = require("helmet");
 const cookieParser = require("cookie-parser");
 const session = require("express-session");
 const auth = require("./lib/auth");
 const mongoose = require("mongoose");
 const MongoStore = require("connect-mongo")(session);
 const path = require("path");
+const compression = require("compression");
 const createError = require("http-errors");
 const bodyParser = require("body-parser");
 const routes = require("./routes");
 const SpeakerService = require("./services/SpeakerService");
 const FeedbackService = require("./services/FeedbackService");
+const AvatarService = require("./services/AvatarService");
 
 module.exports = (config) => {
   const app = express();
+  app.use(helmet());
+  app.use(compression());
   const speakers = new SpeakerService(config.data.speakers);
   const feedback = new FeedbackService(config.data.feedback);
+  const avatars = new AvatarService(config.data.avatars);
 
   app.set("view engine", "pug");
   app.set("views", path.join(__dirname, "./views"));
@@ -26,6 +32,30 @@ module.exports = (config) => {
 
   app.use(bodyParser.urlencoded({ extended: true }));
   app.use(cookieParser());
+
+  if (app.get("env") == "production") {
+    app.set("trust proxy", "loopback");
+    app.use(
+      session({
+        secret: "another very secret 1235",
+        name: "sessionId",
+        proxy: true,
+        cookie: { secure: true },
+        resave: true,
+        saveUninitialized: false,
+        store: new MongoStore({ mongooseConnection: mongoose.connection }),
+      })
+    );
+  } else {
+    app.use(
+      session({
+        secret: "very secret 1235",
+        resave: true,
+        saveUninitialized: false,
+        store: new MongoStore({ mongooseConnection: mongoose.connection }),
+      })
+    );
+  }
 
   app.use(
     session({
@@ -51,7 +81,7 @@ module.exports = (config) => {
     }
   });
 
-  app.use("/", routes({ speakers, feedback }));
+  app.use("/", routes({ speakers, feedback, avatars }));
 
   // catch 404 and forward to error handler
   app.use((req, res, next) => {
